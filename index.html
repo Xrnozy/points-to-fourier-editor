@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fourier Epicycle Editor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <p class="eyebrow">Unity export</p>
+      <h1>Fourier Epicycle Editor</h1>
+    </header>
+
+    <main class="workspace">
+      <div class="workspace-main">
+        <section class="panel editor-panel">
+          <div class="panel-head">
+            <h2>Point Editor</h2>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="editor-canvas"></canvas>
+          </div>
+        </section>
+
+        <section class="panel epicycle-panel">
+          <div class="panel-head">
+            <h2>Epicycle Preview</h2>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="epicycle-canvas"></canvas>
+          </div>
+        </section>
+
+        <aside class="sidebar">
+          <div class="panel layers-panel-wrap" id="layers-panel"></div>
+          <div class="panel controls-panel" id="controls-panel"></div>
+        </aside>
+      </div>
+
+      <section class="panel code-panel" id="code-panel"></section>
+    </main>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
