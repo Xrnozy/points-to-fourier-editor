@@ -1,0 +1,10 @@
+{
+  "name": "fourier-editor",
+  "private": true,
+  "scripts": {
+    "start": "serve -l 8765 ."
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
