@@ -1,9 +1,8 @@
-export function parseFourierCode(text) {
-  const nameMatch = text.match(/"([^"]+)"\s*=>/);
-  const name = nameMatch ? nameMatch[1] : 'shape';
+const COEFF_RE = /(-?\d+)\s*=>\s*\{\s*a\s*:\s*([-\d.eE+]+)\s*,\s*p\s*:\s*([-\d.eE+]+)\s*\}/gi;
 
+function parseCoefficients(text) {
   const coefficients = [];
-  const re = /(-?\d+)\s*=>\s*\{a:\s*([-\d.eE+]+),\s*p:\s*([-\d.eE+]+)\}/g;
+  const re = new RegExp(COEFF_RE.source, COEFF_RE.flags);
   let m;
   while ((m = re.exec(text)) !== null) {
     coefficients.push({
@@ -12,9 +11,32 @@ export function parseFourierCode(text) {
       phase: parseFloat(m[3]),
     });
   }
+  return coefficients;
+}
 
-  if (coefficients.length === 0) return null;
-  return { name, coefficients };
+function splitCoefficientBlocks(text) {
+  const blocks = [];
+  const re = /\[\s*((?:-?\d+\s*=>\s*\{[^}]+\},?\s*)+)\]/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const coeffs = parseCoefficients(m[1]);
+    if (coeffs.length > 0) blocks.push(coeffs);
+  }
+  return blocks;
+}
+
+export function parseFourierCode(text) {
+  const nameMatch = text.match(/"([^"]+)"\s*=>/);
+  const name = nameMatch ? nameMatch[1] : 'shape';
+
+  const coefficientGroups = splitCoefficientBlocks(text);
+  if (coefficientGroups.length === 0) {
+    const coefficients = parseCoefficients(text);
+    if (coefficients.length === 0) return null;
+    return { name, coefficientGroups: [coefficients] };
+  }
+
+  return { name, coefficientGroups };
 }
 
 export function expandCoefficients(parsedCoeffs, maxHarmonics) {

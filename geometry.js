@@ -1,6 +1,61 @@
 const DEFAULT_POINT_COUNT = 32;
 const DEFAULT_RADIUS = 120;
 const RESAMPLE_COUNT = 512;
+const DEG = Math.PI / 180;
+
+function mat3Multiply(a, b) {
+  const out = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      out[r][c] = a[r][0] * b[0][c] + a[r][1] * b[1][c] + a[r][2] * b[2][c];
+    }
+  }
+  return out;
+}
+
+function rotationMatrixXYZ(rotDeg) {
+  const ax = rotDeg.x * DEG;
+  const ay = rotDeg.y * DEG;
+  const az = rotDeg.z * DEG;
+  const cx = Math.cos(ax);
+  const sx = Math.sin(ax);
+  const cy = Math.cos(ay);
+  const sy = Math.sin(ay);
+  const cz = Math.cos(az);
+  const sz = Math.sin(az);
+  const Rx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]];
+  const Ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
+  const Rz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]];
+  return mat3Multiply(Rz, mat3Multiply(Ry, Rx));
+}
+
+export function rotateDisplayPoint(p, rotDeg) {
+  const m = rotationMatrixXYZ(rotDeg);
+  const x = p.x;
+  const y = p.y;
+  return {
+    x: m[0][0] * x + m[0][1] * y,
+    y: m[1][0] * x + m[1][1] * y,
+  };
+}
+
+export function displayToBasePoint(p, rotDeg) {
+  const m = rotationMatrixXYZ(rotDeg);
+  const m00 = m[0][0];
+  const m01 = m[0][1];
+  const m10 = m[1][0];
+  const m11 = m[1][1];
+  const det = m00 * m11 - m01 * m10;
+  if (Math.abs(det) < 1e-9) return { x: p.x, y: p.y };
+  return {
+    x: (m11 * p.x - m01 * p.y) / det,
+    y: (-m10 * p.x + m00 * p.y) / det,
+  };
+}
+
+export function rotateContourPoints(points, rotDeg) {
+  return points.map((p) => rotateDisplayPoint(p, rotDeg));
+}
 
 export function createDefaultCircle(count = DEFAULT_POINT_COUNT, radius = DEFAULT_RADIUS) {
   const points = [];
@@ -134,6 +189,123 @@ export function translatePoints(points, dx, dy) {
   return points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
 }
 
+export function boundsCenter(bounds) {
+  return {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+  };
+}
+
+export function getRotateHandle(bounds, offset = 32) {
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  return { x: cx, y: bounds.maxY + offset };
+}
+
+export function boundsHandles(bounds) {
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const cy = (bounds.minY + bounds.maxY) / 2;
+  return {
+    nw: { x: bounds.minX, y: bounds.maxY },
+    ne: { x: bounds.maxX, y: bounds.maxY },
+    se: { x: bounds.maxX, y: bounds.minY },
+    sw: { x: bounds.minX, y: bounds.minY },
+    n: { x: cx, y: bounds.maxY },
+    s: { x: cx, y: bounds.minY },
+    e: { x: bounds.maxX, y: cy },
+    w: { x: bounds.minX, y: cy },
+  };
+}
+
+export function rotatePointsAround(points, center, angleRad) {
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  return points.map((p) => {
+    const dx = p.x - center.x;
+    const dy = p.y - center.y;
+    return {
+      x: center.x + dx * cos - dy * sin,
+      y: center.y + dx * sin + dy * cos,
+    };
+  });
+}
+
+const OPPOSITE_HANDLE = {
+  nw: 'se',
+  ne: 'sw',
+  se: 'nw',
+  sw: 'ne',
+  n: 's',
+  s: 'n',
+  e: 'w',
+  w: 'e',
+};
+
+export function getScaleAnchor(handle, bounds) {
+  const handles = boundsHandles(bounds);
+  return handles[OPPOSITE_HANDLE[handle]];
+}
+
+export function scalePointsFromAnchor(points, anchor, scaleX, scaleY) {
+  const sx = scaleX;
+  const sy = scaleY;
+  return points.map((p) => ({
+    x: anchor.x + (p.x - anchor.x) * sx,
+    y: anchor.y + (p.y - anchor.y) * sy,
+  }));
+}
+
+export function computeScaleFromHandle(handle, anchor, startHandle, world, { uniform = true } = {}) {
+  const ox = startHandle.x - anchor.x;
+  const oy = startHandle.y - anchor.y;
+  const nx = world.x - anchor.x;
+  const ny = world.y - anchor.y;
+  const minScale = 0.05;
+
+  const isCorner = handle === 'nw' || handle === 'ne' || handle === 'se' || handle === 'sw';
+  if (isCorner) {
+    const startDist = Math.hypot(ox, oy);
+    const newDist = Math.hypot(nx, ny);
+    const scale = startDist > 1e-6 ? Math.max(minScale, newDist / startDist) : 1;
+    if (uniform) return { scaleX: scale, scaleY: scale };
+    const scaleX = Math.abs(ox) > 1e-6 ? Math.max(minScale, nx / ox) : 1;
+    const scaleY = Math.abs(oy) > 1e-6 ? Math.max(minScale, ny / oy) : 1;
+    return { scaleX, scaleY };
+  }
+
+  if (handle === 'e' || handle === 'w') {
+    const scaleX = Math.abs(ox) > 1e-6 ? Math.max(minScale, nx / ox) : 1;
+    return { scaleX, scaleY: 1 };
+  }
+
+  const scaleY = Math.abs(oy) > 1e-6 ? Math.max(minScale, ny / oy) : 1;
+  return { scaleX: 1, scaleY };
+}
+
+export function hitTestLayerHandle(sx, sy, points, transform, radius = 11) {
+  if (points.length < 1) return null;
+  const bounds = getBounds(points);
+  const r2 = radius * radius;
+  const rotate = getRotateHandle(bounds);
+  const rotatePt = toCanvas(rotate.x, rotate.y, transform);
+  if (distSq(sx, sy, rotatePt.cx, rotatePt.cy) <= r2) return 'rotate';
+
+  const handles = boundsHandles(bounds);
+  for (const [id, pt] of Object.entries(handles)) {
+    const p = toCanvas(pt.x, pt.y, transform);
+    if (distSq(sx, sy, p.cx, p.cy) <= r2) return id;
+  }
+  return null;
+}
+
+export function pointInBounds(x, y, bounds, pad = 0) {
+  return (
+    x >= bounds.minX - pad
+    && x <= bounds.maxX + pad
+    && y >= bounds.minY - pad
+    && y <= bounds.maxY + pad
+  );
+}
+
 export function insertPoint(points, index, point) {
   const next = points.slice();
   next.splice(index + 1, 0, point);
@@ -178,6 +350,10 @@ export function arcLengthResample(points, sampleCount = RESAMPLE_COUNT) {
 }
 
 export function getBounds(points) {
+  if (!points.length) {
+    const pad = 120;
+    return { minX: -pad, maxX: pad, minY: -pad, maxY: pad, w: pad * 2, h: pad * 2 };
+  }
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const p of points) {
     if (p.x < minX) minX = p.x;

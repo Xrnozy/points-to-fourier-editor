@@ -1,6 +1,13 @@
 import { fitTransform, toCanvas, getBounds } from './geometry.js';
 import { sampleReconstructed } from './fourier.js';
-import { getState, getAllBoundsPoints } from './state.js';
+import { getAllBoundsPoints, getDisplayContours, getPreviewCoefficientSets } from './state.js';
+
+const RECON_COLORS = [
+  { fill: 'rgba(107, 144, 128, 0.18)', stroke: '#8fbf9f' },
+  { fill: 'rgba(212, 168, 140, 0.16)', stroke: '#d4a88c' },
+  { fill: 'rgba(158, 179, 168, 0.16)', stroke: '#9eb3a8' },
+  { fill: 'rgba(196, 122, 106, 0.16)', stroke: '#c47a6a' },
+];
 
 export function initEpicycleCanvas(canvas) {
   const ctx = canvas.getContext('2d');
@@ -49,29 +56,38 @@ export function initEpicycleCanvas(canvas) {
   }
 
   function draw() {
-    const { contours, activeCoefficients } = getState();
+    const coefficientSets = getPreviewCoefficientSets();
+    const contours = getDisplayContours();
 
     ctx.clearRect(0, 0, viewW, viewH);
     ctx.fillStyle = '#13151a';
     ctx.fillRect(0, 0, viewW, viewH);
 
-    if (activeCoefficients.length === 0 || viewW < 1 || viewH < 1) return;
+    if (coefficientSets.length === 0 || viewW < 1 || viewH < 1) return;
 
-    const reconPts = sampleReconstructed(activeCoefficients, 256);
-    transform = fitTransform(getBounds([...getAllBoundsPoints(), ...reconPts]), viewW, viewH);
+    const reconPaths = coefficientSets.map((coeffs) => sampleReconstructed(coeffs, 256));
+    const allPts = [...getAllBoundsPoints(), ...reconPaths.flat()];
+    transform = fitTransform(getBounds(allPts), viewW, viewH);
 
     for (const contour of contours) {
-      drawPath(contour.points, {
-        stroke: 'rgba(139, 145, 156, 0.25)',
-        lineWidth: 1,
-        dashed: true,
-      });
+      if (contour.closed && contour.points.length >= 3) {
+        drawPath(contour.points, {
+          stroke: contour.groupType === 'separate'
+            ? 'rgba(212, 168, 140, 0.35)'
+            : 'rgba(139, 145, 156, 0.25)',
+          lineWidth: 1,
+          dashed: true,
+        });
+      }
     }
 
-    drawPath(reconPts, {
-      fill: 'rgba(107, 144, 128, 0.18)',
-      stroke: '#8fbf9f',
-      lineWidth: 2.5,
+    reconPaths.forEach((reconPts, i) => {
+      const colors = RECON_COLORS[i % RECON_COLORS.length];
+      drawPath(reconPts, {
+        fill: colors.fill,
+        stroke: colors.stroke,
+        lineWidth: 2.5,
+      });
     });
   }
 

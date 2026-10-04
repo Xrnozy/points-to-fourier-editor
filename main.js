@@ -4,6 +4,7 @@ import { initEpicycleCanvas } from './epicycle-canvas.js';
 import { initCodePanel } from './code-panel.js';
 import { initControls } from './controls.js';
 import { initLayersPanel } from './layers-panel.js';
+import { startAnimationLoop } from './animation-player.js';
 
 const editorCanvas = document.getElementById('editor-canvas');
 const epicycleCanvas = document.getElementById('epicycle-canvas');
@@ -19,13 +20,22 @@ const code = initCodePanel(codePanel, {
   onSyncControls: () => {
     controls.sync();
     layers.sync();
+    code.syncTimeline();
   },
 });
 
-subscribe(() => {
+function redraw() {
   editor.draw();
   epicycle.draw();
   code.update();
   controls.sync();
   layers.sync();
+}
+
+subscribe(redraw);
+
+startAnimationLoop(() => {
+  editor.draw();
+  epicycle.draw();
+  code.syncTimeline();
 });

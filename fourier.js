@@ -53,6 +53,48 @@ export function coefficientsToPoints(coeffs, sampleCount = 48) {
   return sampleReconstructed(coeffs, sampleCount);
 }
 
+function coeffFromComplex(frequency, re, im) {
+  return {
+    frequency,
+    re,
+    im,
+    amplitude: Math.hypot(re, im),
+    phase: Math.atan2(im, re),
+  };
+}
+
+export function lerpCoefficients(a, b, t) {
+  const mapB = new Map(b.map((c) => [c.frequency, c]));
+  const freqs = new Set([...a.map((c) => c.frequency), ...b.map((c) => c.frequency)]);
+  const out = [];
+  for (const frequency of freqs) {
+    const ca = a.find((c) => c.frequency === frequency);
+    const cb = mapB.get(frequency);
+    const reA = ca?.re ?? 0;
+    const imA = ca?.im ?? 0;
+    const reB = cb?.re ?? 0;
+    const imB = cb?.im ?? 0;
+    out.push(coeffFromComplex(
+      frequency,
+      reA + (reB - reA) * t,
+      imA + (imB - imA) * t
+    ));
+  }
+  return out.sort((x, y) => x.frequency - y.frequency);
+}
+
+export function lerpCoefficientSetList(setsA, setsB, t) {
+  const count = Math.max(setsA.length, setsB.length);
+  const result = [];
+  for (let i = 0; i < count; i++) {
+    const a = setsA[i] ?? setsB[i];
+    const b = setsB[i] ?? setsA[i];
+    if (!a?.length && !b?.length) continue;
+    result.push(lerpCoefficients(a ?? b, b ?? a, t));
+  }
+  return result;
+}
+
 export function sortEpicycleOrder(coeffs) {
   return [...coeffs].sort((a, b) => {
     const fa = Math.abs(a.frequency);
