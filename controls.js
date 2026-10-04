@@ -24,7 +24,8 @@ export function initControls(container) {
         <button id="point-mode-btn">Point edit</button>
       </div>
       <div class="btn-row">
-        <button id="draw-mode-btn" class="full-width">Draw from scratch</button>
+        <button id="eraser-mode-btn">Eraser</button>
+        <button id="draw-mode-btn">Draw new</button>
       </div>
       <p class="tool-hint" id="draw-hint">Layer move: drag handles to scale · Shift for free scale</p>
     </div>
@@ -93,6 +94,7 @@ export function initControls(container) {
   const harmonicsValue = container.querySelector('#harmonics-value');
   const layerModeBtn = container.querySelector('#layer-mode-btn');
   const pointModeBtn = container.querySelector('#point-mode-btn');
+  const eraserModeBtn = container.querySelector('#eraser-mode-btn');
   const drawModeBtn = container.querySelector('#draw-mode-btn');
   const drawHint = container.querySelector('#draw-hint');
   const undoBtn = container.querySelector('#undo-btn');
@@ -148,6 +150,9 @@ export function initControls(container) {
     setEditorTool('edit');
     setSelectionMode('point');
   });
+  eraserModeBtn.addEventListener('click', () => {
+    setEditorTool('eraser');
+  });
   drawModeBtn.addEventListener('click', () => {
     const { editorTool } = getState();
     setEditorTool(editorTool === 'draw' ? 'edit' : 'draw');
@@ -192,15 +197,18 @@ export function initControls(container) {
     rotateZValue.textContent = `${rotation.z}°`;
     layerModeBtn.classList.toggle('active', editorTool === 'edit' && selectionMode === 'layer');
     pointModeBtn.classList.toggle('active', editorTool === 'edit' && selectionMode === 'point');
+    eraserModeBtn.classList.toggle('active', editorTool === 'eraser');
     drawModeBtn.classList.toggle('active', editorTool === 'draw');
-    drawModeBtn.textContent = editorTool === 'draw' ? 'Stop drawing' : 'Draw from scratch';
+    drawModeBtn.textContent = editorTool === 'draw' ? 'Stop draw' : 'Draw new';
     drawHint.textContent = editorTool === 'draw'
       ? 'Click to place points · Click first point to close'
-      : selectionMode === 'layer'
-        ? 'Scroll zoom · Middle-drag pan · Fit resets view · Click edge/point to edit'
-        : selectedIndices.length > 1
-          ? `${selectedIndices.length} points selected · Edge adds · Point drags · Shift+click multi-select`
-          : 'Click edge to add · Click point to drag · Shift+click to multi-select';
+      : editorTool === 'eraser'
+        ? 'Drag over points to erase · Needs at least 3 points left'
+        : selectionMode === 'layer'
+          ? 'Drag box to select points · Click/drag point to move · Scroll zoom · Middle-drag pan'
+          : selectedIndices.length > 1
+            ? `${selectedIndices.length} points selected · Drag box to add more · Shift+click toggles`
+            : 'Drag box to multi-select · Click edge to add · Shift+click toggles point';
     deleteBtn.textContent = selectedIndices.length > 1 ? 'Delete points' : 'Delete point';
     undoBtn.disabled = !canUndo();
     redoBtn.disabled = !canRedo();

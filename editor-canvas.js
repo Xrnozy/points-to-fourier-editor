@@ -30,6 +30,8 @@ import {
   isPointSelected,
   setActiveContourPoints,
   selectPoint,
+  selectPoints,
+  clearPointSelection,
   setActiveContourIndex,
   setSelectionMode,
   updatePoint,
@@ -39,9 +41,12 @@ import {
   addDrawPoint,
   closeActiveContour,
   saveCheckpoint,
+  erasePointAt,
 } from './state.js';
 
 const POINT_HIT_RADIUS = 16;
+const ERASER_RADIUS = 20;
+const DRAG_THRESHOLD_SQ = 6 * 6;
 const SEGMENT_HIT_RADIUS = 12;
 const CLOSE_RADIUS = 14;
 const HANDLE_DRAW_SIZE = 5;
@@ -83,6 +88,9 @@ export function initEditorCanvas(canvas) {
   let dragRotateStartAngle = null;
   let activePointerId = null;
   let hoverWorld = null;
+  let pendingPick = null;
+  let eraserStroke = false;
+  let marquee = null;
   let viewW = 0;
   let viewH = 0;
 
@@ -288,6 +296,20 @@ export function initEditorCanvas(canvas) {
       drawContour(contours[ci], ci, activeContourIndex, selectedIndices, selectionMode);
     }
 
+    if (marquee) {
+      const x = Math.min(marquee.startSx, marquee.sx);
+      const y = Math.min(marquee.startSy, marquee.sy);
+      const w = Math.abs(marquee.sx - marquee.startSx);
+      const h = Math.abs(marquee.sy - marquee.startSy);
+      ctx.fillStyle = 'rgba(212, 168, 140, 0.14)';
+      ctx.strokeStyle = '#d4a88c';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 4]);
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeRect(x, y, w, h);
+      ctx.setLineDash([]);
+    }
+
     if (editorTool === 'draw' && getActiveContour().points.length === 0) {
       ctx.fillStyle = 'rgba(139, 145, 156, 0.5)';
       ctx.font = '13px Outfit, sans-serif';
@@ -366,15 +388,9 @@ export function initEditorCanvas(canvas) {
     return false;
   }
 
-  function beginPointDrag(contourIndex, pointIndex, world, t, e) {
+  function handlePointHit(contourIndex, pointIndex, e, sx, sy, world, t) {
     if (contourIndex !== getState().activeContourIndex) {
       setActiveContourIndex(contourIndex);
-    }
-
-    if (getState().selectionMode === 'layer' && !e.shiftKey) {
-      startPointDrag(contourIndex, [pointIndex], world, t);
-      canvas.style.cursor = 'grabbing';
-      return;
     }
 
     if (e.shiftKey) {
@@ -385,10 +401,63 @@ export function initEditorCanvas(canvas) {
       return;
     }
 
-    if (!getState().selectedIndices.includes(pointIndex)) {
-      selectPoint(pointIndex);
+    pendingPick = { contourIndex, pointIndex, world, t, startSx: sx, startSy: sy };
+  }
+
+  function tryEraseAt(sx, sy, t) {
+    const { activeContourIndex } = getState();
+    const contours = getDisplayContours();
+    const points = contours[activeContourIndex]?.points;
+    if (!points) return;
+    const index = hitTestPointScreen(points, sx, sy, t, ERASER_RADIUS);
+    if (index < 0) return;
+    erasePointAt(index, { skipCheckpoint: true });
+  }
+
+  function indicesInMarquee(contourIndex, t) {
+    const contours = getDisplayContours();
+    const points = contours[contourIndex]?.points ?? [];
+    const x1 = Math.min(marquee.startSx, marquee.sx);
+    const x2 = Math.max(marquee.startSx, marquee.sx);
+    const y1 = Math.min(marquee.startSy, marquee.sy);
+    const y2 = Math.max(marquee.startSy, marquee.sy);
+    const indices = [];
+    for (let i = 0; i < points.length; i++) {
+      const p = toCanvas(points[i].x, points[i].y, t);
+      if (p.cx >= x1 && p.cx <= x2 && p.cy >= y1 && p.cy <= y2) indices.push(i);
     }
-    startPointDrag(contourIndex, [...getState().selectedIndices], world, t);
+    return indices;
+  }
+
+  function finishMarquee(t) {
+    if (!marquee) return;
+    const { activeContourIndex } = getState();
+    const w = Math.abs(marquee.sx - marquee.startSx);
+    const h = Math.abs(marquee.sy - marquee.startSy);
+    if (w >= 4 || h >= 4) {
+      selectPoints(indicesInMarquee(activeContourIndex, t), { additive: marquee.additive });
+    } else if (!marquee.additive) {
+      clearPointSelection();
+      setSelectionMode('point');
+    }
+    marquee = null;
+  }
+
+  function resolvePendingPickDrag() {
+    if (!pendingPick) return;
+    const { contourIndex, pointIndex, world, t, startSx, startSy } = pendingPick;
+    const { selectionMode, selectedIndices } = getState();
+    let indices;
+    if (selectionMode === 'layer') {
+      indices = [pointIndex];
+    } else if (selectedIndices.includes(pointIndex)) {
+      indices = [...selectedIndices];
+    } else {
+      selectPoint(pointIndex);
+      indices = [pointIndex];
+    }
+    startPointDrag(contourIndex, indices, world, t);
+    pendingPick = null;
     canvas.style.cursor = 'grabbing';
   }
 
@@ -404,6 +473,14 @@ export function initEditorCanvas(canvas) {
     const contours = getDisplayContours();
     const { sx, sy, world } = getPointerPos(e);
     const t = computeTransform();
+
+    if (editorTool === 'eraser') {
+      saveCheckpoint();
+      eraserStroke = true;
+      tryEraseAt(sx, sy, t);
+      canvas.style.cursor = 'crosshair';
+      return;
+    }
 
     if (editorTool === 'draw') {
       if (tryCloseDraw(sx, sy, t)) {
@@ -437,7 +514,7 @@ export function initEditorCanvas(canvas) {
     if (editorTool === 'edit' && activeDisplay) {
       const activePoint = hitTestPointScreen(activeDisplay.points, sx, sy, t, POINT_HIT_RADIUS);
       if (activePoint >= 0) {
-        beginPointDrag(activeContourIndex, activePoint, world, t, e);
+        handlePointHit(activeContourIndex, activePoint, e, sx, sy, world, t);
         return;
       }
     }
@@ -464,7 +541,7 @@ export function initEditorCanvas(canvas) {
 
     const hit = hitTestContoursScreen(contours, sx, sy, t, POINT_HIT_RADIUS);
     if (hit) {
-      beginPointDrag(hit.contourIndex, hit.pointIndex, world, t, e);
+      handlePointHit(hit.contourIndex, hit.pointIndex, e, sx, sy, world, t);
       return;
     }
 
@@ -487,6 +564,12 @@ export function initEditorCanvas(canvas) {
       return;
     }
 
+    if (editorTool === 'edit') {
+      setSelectionMode('point');
+      marquee = { startSx: sx, startSy: sy, sx, sy, additive: e.shiftKey };
+      return;
+    }
+
     canvas.releasePointerCapture(e.pointerId);
     activePointerId = null;
     setSelectionMode('layer');
@@ -503,6 +586,25 @@ export function initEditorCanvas(canvas) {
     }
 
     if (e.pointerId !== activePointerId && activePointerId !== null) return;
+
+    if (editorTool === 'eraser' && eraserStroke) {
+      tryEraseAt(sx, sy, computeTransform());
+      draw();
+      return;
+    }
+
+    if (pendingPick && !dragging) {
+      if (distSq(sx, sy, pendingPick.startSx, pendingPick.startSy) > DRAG_THRESHOLD_SQ) {
+        resolvePendingPickDrag();
+      }
+    }
+
+    if (marquee) {
+      marquee.sx = sx;
+      marquee.sy = sy;
+      draw();
+      return;
+    }
 
     if (dragging && dragMode === 'layer' && dragOriginPoints) {
       const dx = world.x - dragStartWorld.x;
@@ -553,8 +655,8 @@ export function initEditorCanvas(canvas) {
 
     const { activeContourIndex, selectionMode } = getState();
     const t = computeTransform();
-    if (editorTool === 'draw') {
-      canvas.style.cursor = 'crosshair';
+    if (editorTool === 'draw' || editorTool === 'eraser') {
+      canvas.style.cursor = editorTool === 'eraser' ? 'cell' : 'crosshair';
     } else if (selectionMode === 'layer') {
       const activePoints = contours[activeContourIndex]?.points ?? [];
       const handle = hitTestLayerHandle(sx, sy, activePoints, t, HANDLE_HIT_RADIUS);
@@ -582,6 +684,14 @@ export function initEditorCanvas(canvas) {
 
   function endPointer(e) {
     if (e.pointerId !== activePointerId) return;
+    if (marquee) {
+      finishMarquee(computeTransform());
+    }
+    if (pendingPick && !dragging) {
+      selectPoint(pendingPick.pointIndex);
+      pendingPick = null;
+    }
+    eraserStroke = false;
     canvas.releasePointerCapture(e.pointerId);
     activePointerId = null;
     dragging = false;

@@ -520,6 +520,22 @@ export function selectPoint(index, { additive = false } = {}) {
   notify();
 }
 
+export function selectPoints(indices, { additive = false } = {}) {
+  const unique = [...new Set(indices)].filter((i) => i >= 0).sort((a, b) => a - b);
+  if (additive) {
+    const set = new Set(state.selectedIndices);
+    for (const i of unique) {
+      if (set.has(i)) set.delete(i);
+      else set.add(i);
+    }
+    state.selectedIndices = [...set].sort((a, b) => a - b);
+  } else {
+    state.selectedIndices = unique;
+  }
+  state.selectionMode = 'point';
+  notify();
+}
+
 export function clearPointSelection() {
   state.selectedIndices = [];
   notify();
@@ -543,6 +559,7 @@ export function setEditorTool(tool) {
     cancelPendingRecompute();
     recompute();
   }
+  if (tool === 'eraser') state.selectedIndices = [];
   notify();
 }
 
@@ -730,10 +747,24 @@ export function deleteSelectedPoints() {
   const removeSet = new Set(state.selectedIndices);
   contour.points = contour.points.filter((_, i) => !removeSet.has(i));
   state.selectedIndices = [];
-  state.selectionMode = 'layer';
+  if (state.editorTool !== 'eraser') state.selectionMode = 'layer';
   cancelPendingRecompute();
   recompute();
   notify();
+}
+
+export function erasePointAt(index, { skipCheckpoint = false } = {}) {
+  const contour = state.contours[state.activeContourIndex];
+  if (index < 0 || index >= contour.points.length) return false;
+  if (contour.points.length <= 3) return false;
+  if (!skipCheckpoint) saveCheckpoint();
+  contour.points.splice(index, 1);
+  state.selectedIndices = state.selectedIndices
+    .filter((i) => i !== index)
+    .map((i) => (i > index ? i - 1 : i));
+  scheduleRecompute();
+  notify();
+  return true;
 }
 
 export function importFourier(text) {
