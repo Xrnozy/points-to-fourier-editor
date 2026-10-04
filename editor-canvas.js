@@ -358,6 +358,32 @@ export function initEditorCanvas(canvas) {
     return false;
   }
 
+  function beginPointDrag(contourIndex, pointIndex, world, t, e) {
+    if (contourIndex !== getState().activeContourIndex) {
+      setActiveContourIndex(contourIndex);
+    }
+
+    if (getState().selectionMode === 'layer' && !e.shiftKey) {
+      startPointDrag(contourIndex, [pointIndex], world, t);
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
+
+    if (e.shiftKey) {
+      selectPoint(pointIndex, { additive: true });
+      canvas.releasePointerCapture(e.pointerId);
+      activePointerId = null;
+      draw();
+      return;
+    }
+
+    if (!getState().selectedIndices.includes(pointIndex)) {
+      selectPoint(pointIndex);
+    }
+    startPointDrag(contourIndex, [...getState().selectedIndices], world, t);
+    canvas.style.cursor = 'grabbing';
+  }
+
   canvas.addEventListener('pointerdown', (e) => {
     if (activePointerId !== null) return;
     syncSize();
@@ -398,47 +424,41 @@ export function initEditorCanvas(canvas) {
       }
     }
 
-    const hit = hitTestContoursScreen(contours, sx, sy, t, POINT_HIT_RADIUS);
-    if (hit) {
-      if (hit.contourIndex !== activeContourIndex) {
-        setActiveContourIndex(hit.contourIndex);
-      }
-
-      if (selectionMode === 'layer' && !e.shiftKey) {
-        startPointDrag(hit.contourIndex, [hit.pointIndex], world, t);
-        canvas.style.cursor = 'grabbing';
+    const activeDisplay = contours[activeContourIndex];
+    if (editorTool === 'edit' && activeDisplay) {
+      const activePoint = hitTestPointScreen(activeDisplay.points, sx, sy, t, POINT_HIT_RADIUS);
+      if (activePoint >= 0) {
+        beginPointDrag(activeContourIndex, activePoint, world, t, e);
         return;
       }
-
-      if (e.shiftKey) {
-        selectPoint(hit.pointIndex, { additive: true });
-        canvas.releasePointerCapture(e.pointerId);
-        activePointerId = null;
-        draw();
-        return;
-      }
-
-      if (!getState().selectedIndices.includes(hit.pointIndex)) {
-        selectPoint(hit.pointIndex);
-      }
-      startPointDrag(hit.contourIndex, [...getState().selectedIndices], world, t);
-      canvas.style.cursor = 'grabbing';
-      return;
     }
 
-    const activePoints = getActivePoints();
-    if (selectionMode === 'point') {
-      const seg = hitTestSegmentScreen(activePoints, sx, sy, t, SEGMENT_HIT_RADIUS);
+    if (editorTool === 'edit' && activeDisplay?.points.length >= 2) {
+      const seg = hitTestSegmentScreen(
+        activeDisplay.points,
+        sx,
+        sy,
+        t,
+        SEGMENT_HIT_RADIUS,
+        POINT_HIT_RADIUS,
+        activeDisplay.closed
+      );
       if (seg) {
         canvas.releasePointerCapture(e.pointerId);
         activePointerId = null;
-        setActiveContourPoints(insertPoint(activePoints, seg.index, seg.point));
-        selectPoint(seg.index + 1);
+        setActiveContourPoints(insertPoint(activeDisplay.points, seg.index, seg.point));
+        if (selectionMode === 'point') selectPoint(seg.index + 1);
+        draw();
         return;
       }
     }
 
-    const activeDisplay = contours[activeContourIndex];
+    const hit = hitTestContoursScreen(contours, sx, sy, t, POINT_HIT_RADIUS);
+    if (hit) {
+      beginPointDrag(hit.contourIndex, hit.pointIndex, world, t, e);
+      return;
+    }
+
     if (
       selectionMode === 'layer'
       && activeDisplay

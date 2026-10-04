@@ -11,9 +11,9 @@ import {
   removeActiveContour,
 } from './state.js';
 
-function layerLabel(contour, indexInGroup, groupType) {
+function layerLabel(contour, indexInGroup, groupType, layerCount) {
   if (!contour.closed) return 'Drawing…';
-  if (groupType === 'separate') return 'Part';
+  if (groupType === 'separate' && layerCount === 1) return 'Part';
   return indexInGroup === 0 ? 'Outer' : `Inner ${indexInGroup}`;
 }
 
@@ -24,8 +24,8 @@ export function initLayersPanel(container) {
         <p class="control-section-title">Layers</p>
       </div>
       <div class="layers-actions">
-        <button id="add-merged-btn">+ Merge</button>
-        <button id="add-separate-btn">+ Separate</button>
+        <button id="add-merged-btn" title="Add stitched layer to the selected Fourier group">+ Merge</button>
+        <button id="add-separate-btn" title="New separate Fourier block">+ Separate</button>
         <button id="remove-layer-btn" class="danger" title="Remove layer">Remove</button>
       </div>
       <div class="layer-groups" id="layer-groups"></div>
@@ -78,8 +78,8 @@ export function initLayersPanel(container) {
       ? contours.filter((c) => c.groupId === activeContour.groupId).length
       : 0;
 
-    splitBtn.disabled = !activeContour || activeGroup?.type !== 'merged' || mergedSiblings <= 1;
-    joinBtn.disabled = !activeContour || activeGroup?.type !== 'separate';
+    splitBtn.disabled = !activeContour || mergedSiblings <= 1;
+    joinBtn.disabled = !activeContour || activeGroup?.type !== 'separate' || mergedSiblings > 1;
 
     let fourierIndex = 0;
     groupsEl.innerHTML = orderedGroups
@@ -91,15 +91,18 @@ export function initLayersPanel(container) {
         const groupTitle = group.type === 'merged'
           ? `Merged · Fourier ${fourierIndex}`
           : `Separate · Fourier ${fourierIndex}`;
+        const layerCount = groupContours.length;
         const groupHint = group.type === 'merged'
           ? 'Stitched path'
-          : 'Own export block';
+          : layerCount > 1
+            ? 'Stitched · own Fourier block'
+            : 'Own export block';
 
         const items = groupContours
           .map(({ contour, index }, indexInGroup) => {
             const isActive = index === activeContourIndex;
             const isLayerSel = isActive && selectionMode === 'layer';
-            const label = layerLabel(contour, indexInGroup, group.type);
+            const label = layerLabel(contour, indexInGroup, group.type, layerCount);
             return `
               <li class="layer-item${isActive ? ' active' : ''}${isLayerSel ? ' layer-selected' : ''}" data-index="${index}">
                 <button type="button" class="layer-select">

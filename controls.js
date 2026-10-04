@@ -197,10 +197,10 @@ export function initControls(container) {
     drawHint.textContent = editorTool === 'draw'
       ? 'Click to place points · Click first point to close'
       : selectionMode === 'layer'
-        ? 'Drag points · Corner handles scale · Top circle rotates · Shift = free scale'
+        ? 'Click edge to add · Click point to drag · Handles scale/rotate · Shift = free scale'
         : selectedIndices.length > 1
-          ? `${selectedIndices.length} points selected · Shift+click to add/remove`
-          : 'Shift+click to multi-select points';
+          ? `${selectedIndices.length} points selected · Edge adds · Point drags · Shift+click multi-select`
+          : 'Click edge to add · Click point to drag · Shift+click to multi-select';
     deleteBtn.textContent = selectedIndices.length > 1 ? 'Delete points' : 'Delete point';
     undoBtn.disabled = !canUndo();
     redoBtn.disabled = !canRedo();

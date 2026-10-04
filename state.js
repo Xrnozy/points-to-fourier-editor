@@ -92,8 +92,7 @@ function getPathForGroup(groupId) {
     .filter((c) => c.closed && c.points.length >= 3)
     .map((c) => toDisplayPoints(c.points));
   if (closed.length === 0) return [];
-  if (group.type === 'merged') return stitchContours(closed);
-  return closed[0] ? [...closed[0]] : [];
+  return stitchContours(closed);
 }
 
 const listeners = new Set();
@@ -635,16 +634,15 @@ export function resetShape() {
   notify();
 }
 
-function getTargetMergedGroupId() {
+function getTargetGroupId() {
   const active = state.contours[state.activeContourIndex];
-  const activeGroup = active ? getGroup(active.groupId) : null;
-  if (activeGroup?.type === 'merged') return active.groupId;
+  if (active) return active.groupId;
   return ensureMergedGroup();
 }
 
 export function addMergedLayer() {
   saveCheckpoint();
-  const groupId = getTargetMergedGroupId();
+  const groupId = getTargetGroupId();
   state.contours.push({ points: createInnerShape(), closed: true, groupId });
   state.activeContourIndex = state.contours.length - 1;
   state.selectedIndices = [];
@@ -676,7 +674,7 @@ export function addInnerShape() {
 export function splitActiveLayerToSeparate() {
   const contour = state.contours[state.activeContourIndex];
   const group = getGroup(contour.groupId);
-  if (!group || group.type === 'separate') return;
+  if (!group) return;
   if (getContoursInGroup(contour.groupId).length <= 1) return;
   saveCheckpoint();
   const groupId = nextGroupIdValue();

@@ -148,15 +148,20 @@ export function hitTestSegment(points, mx, my, threshold = 6) {
   return best;
 }
 
-export function hitTestSegmentScreen(points, sx, sy, transform, threshold = 12, pointExclusion = 16) {
+export function hitTestSegmentScreen(points, sx, sy, transform, threshold = 12, pointExclusion = 8, closed = true) {
+  if (points.length < 2) return null;
   const t2 = threshold * threshold;
-  const ex2 = pointExclusion * pointExclusion;
   let best = null;
-  for (let i = 0; i < points.length; i++) {
+  const segCount = closed ? points.length : points.length - 1;
+  for (let i = 0; i < segCount; i++) {
+    const j = closed ? (i + 1) % points.length : i + 1;
     const a = toCanvas(points[i].x, points[i].y, transform);
-    const b = toCanvas(points[(i + 1) % points.length].x, points[(i + 1) % points.length].y, transform);
+    const b = toCanvas(points[j].x, points[j].y, transform);
     const proj = projectOntoSegment(sx, sy, a.cx, a.cy, b.cx, b.cy);
     if (distSq(sx, sy, proj.x, proj.y) > t2) continue;
+    const segLen = Math.hypot(b.cx - a.cx, b.cy - a.cy);
+    const ex = Math.min(pointExclusion, segLen * 0.3);
+    const ex2 = ex * ex;
     if (distSq(sx, sy, a.cx, a.cy) <= ex2 || distSq(sx, sy, b.cx, b.cy) <= ex2) continue;
     const d = distSq(sx, sy, proj.x, proj.y);
     if (!best || d < best.d) {
