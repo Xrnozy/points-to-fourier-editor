@@ -1,6 +1,7 @@
 {
   "name": "fourier-editor",
   "private": true,
+  "type": "module",
   "scripts": {
     "start": "serve -l 8765 ."
   },

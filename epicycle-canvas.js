@@ -1,6 +1,14 @@
 import { toCanvas } from './geometry.js';
 import { sampleReconstructed } from './fourier.js';
-import { getAllBoundsPoints, getDisplayContours, getPreviewCoefficientSets } from './state.js';
+import {
+  getAllBoundsPoints,
+  getDisplayContours,
+  getPreviewCoefficientSets,
+  hasLetterProject,
+  getLetterWorkshop,
+} from './state.js';
+import { drawLetterGhost } from './letter-guide.js';
+import { getNotebookFitPoints } from './letter-strokes.js';
 import { attachCanvasZoom, addFitViewButton } from './view-zoom.js';
 
 const RECON_COLORS = [
@@ -18,11 +26,21 @@ export function initEpicycleCanvas(canvas) {
 
   const canvasWrap = canvas.parentElement;
 
+  function getLetterGuideFitPoints() {
+    if (!hasLetterProject()) return [];
+    const ws = getLetterWorkshop();
+    if (ws?.showLetterGuide === false) return [];
+    return getNotebookFitPoints();
+  }
+
   function getFitPoints() {
+    const guidePts = getLetterGuideFitPoints();
     const coefficientSets = getPreviewCoefficientSets();
-    if (coefficientSets.length === 0) return getAllBoundsPoints();
+    if (coefficientSets.length === 0) {
+      return [...getAllBoundsPoints(), ...guidePts];
+    }
     const reconPaths = coefficientSets.map((coeffs) => sampleReconstructed(coeffs, 256));
-    return [...getAllBoundsPoints(), ...reconPaths.flat()];
+    return [...getAllBoundsPoints(), ...guidePts, ...reconPaths.flat()];
   }
 
   const viewZoom = attachCanvasZoom(canvas, {
@@ -71,17 +89,30 @@ export function initEpicycleCanvas(canvas) {
     }
   }
 
+  function shouldShowLetterGuide() {
+    if (!hasLetterProject()) return false;
+    const ws = getLetterWorkshop();
+    return ws?.showLetterGuide !== false && !!ws?.letter;
+  }
+
   function draw() {
     const coefficientSets = getPreviewCoefficientSets();
     const contours = getDisplayContours();
+    const showLetterGuide = shouldShowLetterGuide();
 
     ctx.clearRect(0, 0, viewW, viewH);
     ctx.fillStyle = '#13151a';
     ctx.fillRect(0, 0, viewW, viewH);
 
-    if (coefficientSets.length === 0 || viewW < 1 || viewH < 1) return;
+    if ((coefficientSets.length === 0 && !showLetterGuide) || viewW < 1 || viewH < 1) return;
 
     transform = viewZoom.getTransform();
+
+    if (showLetterGuide) {
+      const ws = getLetterWorkshop();
+      drawLetterGhost(ctx, ws.letter, transform, toCanvas, { darkBackground: true });
+    }
+
     const reconPaths = coefficientSets.map((coeffs) => sampleReconstructed(coeffs, 256));
 
     for (const contour of contours) {

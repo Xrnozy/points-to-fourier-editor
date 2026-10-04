@@ -34,6 +34,7 @@ import {
   clearPointSelection,
   setActiveContourIndex,
   setSelectionMode,
+  isMultiSelectMode,
   updatePoint,
   updatePoints,
   setContourPoints,
@@ -42,7 +43,18 @@ import {
   closeActiveContour,
   saveCheckpoint,
   erasePointAt,
+  hasLetterProject,
+  isLetterNotebookView,
+  consumeNotebookFitRequest,
+  getLetterWorkshop,
 } from './state.js';
+import {
+  getNotebookWritingBounds,
+  getNotebookFitPoints,
+  NOTEBOOK_LINE_SPACING,
+  NOTEBOOK_MARGIN_X,
+} from './letter-strokes.js';
+import { drawLetterGhost } from './letter-guide.js';
 
 const POINT_HIT_RADIUS = 16;
 const ERASER_RADIUS = 20;
@@ -113,8 +125,13 @@ export function initEditorCanvas(canvas) {
   }
 
   function getTransformPoints() {
-    const { editorTool } = getState();
     const contours = getDisplayContours();
+    const strokePts = contours.flatMap((c) => c.points);
+    if (hasLetterProject()) {
+      const guidePts = getNotebookFitPoints();
+      return strokePts.length > 0 ? [...strokePts, ...guidePts] : guidePts;
+    }
+    const { editorTool } = getState();
     if (editorTool === 'draw') {
       const closed = contours.flatMap((c) => (c.closed && c.points.length >= 3 ? c.points : []));
       return closed.length > 0 ? closed : [];
@@ -148,9 +165,17 @@ export function initEditorCanvas(canvas) {
 
   function drawContour(contour, ci, activeContourIndex, selectedIndices, selectionMode) {
     const { points, closed } = contour;
-    const colors = CONTOUR_COLORS[ci % CONTOUR_COLORS.length];
+    const notebookView = isLetterNotebookView();
+    const isLetterStroke = notebookView && contour.letterStroke;
+    const colors = isLetterStroke
+      ? {
+        fill: 'rgba(37, 99, 235, 0.06)',
+        stroke: ci === activeContourIndex ? '#1d4ed8' : 'rgba(37, 99, 235, 0.55)',
+        point: ci === activeContourIndex ? '#2563eb' : 'rgba(37, 99, 235, 0.7)',
+      }
+      : CONTOUR_COLORS[ci % CONTOUR_COLORS.length];
     const isActive = ci === activeContourIndex;
-    const layerSelected = isActive && selectionMode === 'layer';
+    const layerSelected = isActive && selectionMode === 'layer' && !notebookView;
 
     if (points.length >= 1) {
       ctx.beginPath();
@@ -193,7 +218,9 @@ export function initEditorCanvas(canvas) {
 
     for (let i = 0; i < points.length; i++) {
       const p = toCanvas(points[i].x, points[i].y, transform);
-      const pointSelected = isActive && selectionMode === 'point' && selectedIndices.includes(i);
+      const pointSelected = isActive
+        && (selectionMode === 'point' || selectionMode === 'multiselect')
+        && selectedIndices.includes(i);
       const showPoint = isActive && (layerSelected || pointSelected || !closed);
 
       if (!showPoint && !isActive) {
@@ -265,13 +292,20 @@ export function initEditorCanvas(canvas) {
     const { activeContourIndex, selectedIndices, selectionMode, editorTool } = getState();
     const contours = getDisplayContours();
 
+    const notebookView = isLetterNotebookView();
+
     ctx.clearRect(0, 0, viewW, viewH);
-    ctx.fillStyle = '#13151a';
+    ctx.fillStyle = notebookView ? '#f3efe4' : '#13151a';
     ctx.fillRect(0, 0, viewW, viewH);
 
     if (contours.length < 1 || viewW < 1 || viewH < 1) return;
 
     transform = getActiveTransform();
+
+    if (notebookView) {
+      if (consumeNotebookFitRequest()) viewZoom.fitToContent();
+      drawNotebookPaper();
+    }
 
     for (const onion of getOnionSkinLayers()) {
       if (onion.points.length < 2) continue;
@@ -311,10 +345,15 @@ export function initEditorCanvas(canvas) {
     }
 
     if (editorTool === 'draw' && getActiveContour().points.length === 0) {
-      ctx.fillStyle = 'rgba(139, 145, 156, 0.5)';
       ctx.font = '13px Outfit, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Click to place points · Click first point to close', viewW / 2, viewH / 2);
+      if (notebookView) {
+        ctx.fillStyle = 'rgba(30, 64, 175, 0.55)';
+        ctx.fillText('Click on the notebook to draw', viewW / 2, viewH - 28);
+      } else {
+        ctx.fillStyle = 'rgba(139, 145, 156, 0.5)';
+        ctx.fillText('Click to place points · Click first point to close', viewW / 2, viewH / 2);
+      }
     }
   }
 
@@ -377,7 +416,101 @@ export function initEditorCanvas(canvas) {
     transform = t;
   }
 
+  function visibleWorldBounds(t) {
+    const corners = [
+      fromCanvas(0, 0, t),
+      fromCanvas(viewW, 0, t),
+      fromCanvas(0, viewH, t),
+      fromCanvas(viewW, viewH, t),
+    ];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const p of corners) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return { minX, maxX, minY, maxY };
+  }
+
+  function drawWorldHLine(y, x1, x2, style, width = 1, dash = null) {
+    const a = toCanvas(x1, y, transform);
+    const b = toCanvas(x2, y, transform);
+    ctx.strokeStyle = style;
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash ?? []);
+    ctx.beginPath();
+    ctx.moveTo(a.cx, a.cy);
+    ctx.lineTo(b.cx, b.cy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function drawWorldVLine(x, y1, y2, style, width = 1) {
+    const a = toCanvas(x, y1, transform);
+    const b = toCanvas(x, y2, transform);
+    ctx.strokeStyle = style;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(a.cx, a.cy);
+    ctx.lineTo(b.cx, b.cy);
+    ctx.stroke();
+  }
+
+  function drawNotebookPaper() {
+    const visible = visibleWorldBounds(transform);
+    const pad = NOTEBOOK_LINE_SPACING * 2;
+    const minX = visible.minX - pad;
+    const maxX = visible.maxX + pad;
+    const minY = visible.minY - pad;
+    const maxY = visible.maxY + pad;
+
+    const paperTL = toCanvas(minX, maxY, transform);
+    const paperBR = toCanvas(maxX, minY, transform);
+    ctx.fillStyle = '#f3efe4';
+    ctx.fillRect(paperTL.cx, paperTL.cy, paperBR.cx - paperTL.cx, paperBR.cy - paperTL.cy);
+
+    drawWorldVLine(
+      NOTEBOOK_MARGIN_X,
+      minY,
+      maxY,
+      'rgba(220, 38, 38, 0.55)',
+      Math.max(1, 1.5 / transform.scale)
+    );
+
+    const spacing = NOTEBOOK_LINE_SPACING;
+    const firstLine = Math.floor(minY / spacing) * spacing;
+    const lineWidth = Math.max(0.75, 1 / transform.scale);
+    for (let y = firstLine; y <= maxY; y += spacing) {
+      drawWorldHLine(y, minX, maxX, 'rgba(59, 130, 246, 0.38)', lineWidth);
+    }
+
+    const ws = getLetterWorkshop();
+    if (ws?.showLetterGuide !== false) {
+      drawLetterGhost(ctx, ws.letter, transform, toCanvas);
+    }
+
+    const bounds = getNotebookWritingBounds();
+    const guideLeft = bounds.left;
+    const guideRight = bounds.right;
+    const dash = [8 / transform.scale, 6 / transform.scale];
+    const guideWidth = Math.max(1.5, 2 / transform.scale);
+    const zoneWidth = Math.max(1, 1.5 / transform.scale);
+
+    drawWorldVLine(guideLeft, bounds.descender, bounds.capHeight, 'rgba(37, 99, 235, 0.45)', zoneWidth);
+    drawWorldVLine(guideRight, bounds.descender, bounds.capHeight, 'rgba(37, 99, 235, 0.45)', zoneWidth);
+
+    drawWorldHLine(bounds.baseline, guideLeft, guideRight, 'rgba(29, 78, 216, 0.75)', guideWidth, dash);
+    drawWorldHLine(bounds.xHeight, guideLeft, guideRight, 'rgba(37, 99, 235, 0.55)', guideWidth, dash);
+    drawWorldHLine(bounds.capHeight, guideLeft, guideRight, 'rgba(37, 99, 235, 0.5)', guideWidth, dash);
+    drawWorldHLine(bounds.descender, guideLeft, guideRight, 'rgba(37, 99, 235, 0.5)', guideWidth, dash);
+  }
+
   function tryCloseDraw(sx, sy, t) {
+    if (hasLetterProject()) return false;
     const points = getActivePoints();
     if (points.length < 3) return false;
     const first = toCanvas(points[0].x, points[0].y, t);
@@ -388,9 +521,50 @@ export function initEditorCanvas(canvas) {
     return false;
   }
 
+  function isEmptyCanvasHit(sx, sy, world, t) {
+    const contours = getDisplayContours();
+    if (hitTestContoursScreen(contours, sx, sy, t, POINT_HIT_RADIUS)) return false;
+    if (hitTestContoursFill(contours, world.x, world.y) >= 0) return false;
+    const { activeContourIndex } = getState();
+    const activeDisplay = contours[activeContourIndex];
+    if (activeDisplay?.points.length >= 2) {
+      const seg = hitTestSegmentScreen(
+        activeDisplay.points,
+        sx,
+        sy,
+        t,
+        SEGMENT_HIT_RADIUS,
+        POINT_HIT_RADIUS,
+        activeDisplay.closed
+      );
+      if (seg) return false;
+    }
+    return true;
+  }
+
   function handlePointHit(contourIndex, pointIndex, e, sx, sy, world, t) {
     if (contourIndex !== getState().activeContourIndex) {
       setActiveContourIndex(contourIndex);
+    }
+
+    if (isMultiSelectMode()) {
+      const wasSelected = getState().selectedIndices.includes(pointIndex);
+      const additive = e.ctrlKey || e.metaKey;
+      if (additive) {
+        if (!wasSelected) selectPoint(pointIndex, { additive: true });
+      } else if (!wasSelected) {
+        selectPoint(pointIndex, { additive: false });
+      }
+      pendingPick = {
+        contourIndex,
+        pointIndex,
+        world,
+        t,
+        startSx: sx,
+        startSy: sy,
+        toggleOff: additive && wasSelected,
+      };
+      return;
     }
 
     if (e.shiftKey) {
@@ -438,7 +612,7 @@ export function initEditorCanvas(canvas) {
       selectPoints(indicesInMarquee(activeContourIndex, t), { additive: marquee.additive });
     } else if (!marquee.additive) {
       clearPointSelection();
-      setSelectionMode('point');
+      if (!isMultiSelectMode()) setSelectionMode('point');
     }
     marquee = null;
   }
@@ -450,6 +624,9 @@ export function initEditorCanvas(canvas) {
     let indices;
     if (selectionMode === 'layer') {
       indices = [pointIndex];
+    } else if (selectionMode === 'multiselect') {
+      indices = [...getState().selectedIndices];
+      if (!indices.includes(pointIndex)) indices.push(pointIndex);
     } else if (selectedIndices.includes(pointIndex)) {
       indices = [...selectedIndices];
     } else {
@@ -496,7 +673,7 @@ export function initEditorCanvas(canvas) {
       return;
     }
 
-    if (selectionMode === 'layer' && editorTool === 'edit') {
+    if (selectionMode === 'layer' && editorTool === 'edit' && !isMultiSelectMode()) {
       const activePoints = contours[activeContourIndex]?.points ?? [];
       const handle = hitTestLayerHandle(sx, sy, activePoints, t, HANDLE_HIT_RADIUS);
       if (handle) {
@@ -519,7 +696,7 @@ export function initEditorCanvas(canvas) {
       }
     }
 
-    if (editorTool === 'edit' && activeDisplay?.points.length >= 2) {
+    if (editorTool === 'edit' && activeDisplay?.points.length >= 2 && !isMultiSelectMode()) {
       const seg = hitTestSegmentScreen(
         activeDisplay.points,
         sx,
@@ -540,13 +717,14 @@ export function initEditorCanvas(canvas) {
     }
 
     const hit = hitTestContoursScreen(contours, sx, sy, t, POINT_HIT_RADIUS);
-    if (hit) {
+    if (hit && (!isMultiSelectMode() || hit.contourIndex === activeContourIndex)) {
       handlePointHit(hit.contourIndex, hit.pointIndex, e, sx, sy, world, t);
       return;
     }
 
     if (
       selectionMode === 'layer'
+      && !isMultiSelectMode()
       && activeDisplay
       && pointInBounds(world.x, world.y, getBounds(activeDisplay.points), 4)
     ) {
@@ -556,7 +734,7 @@ export function initEditorCanvas(canvas) {
     }
 
     const fillHit = hitTestContoursFill(contours, world.x, world.y);
-    if (fillHit >= 0) {
+    if (fillHit >= 0 && !isMultiSelectMode()) {
       if (fillHit !== activeContourIndex) setActiveContourIndex(fillHit);
       setSelectionMode('layer');
       startLayerDrag(fillHit, world, t);
@@ -564,9 +742,15 @@ export function initEditorCanvas(canvas) {
       return;
     }
 
-    if (editorTool === 'edit') {
-      setSelectionMode('point');
-      marquee = { startSx: sx, startSy: sy, sx, sy, additive: e.shiftKey };
+    if (editorTool === 'edit' && (selectionMode === 'point' || isMultiSelectMode())) {
+      if (!isMultiSelectMode()) setSelectionMode('point');
+      marquee = {
+        startSx: sx,
+        startSy: sy,
+        sx,
+        sy,
+        additive: isMultiSelectMode() && (e.ctrlKey || e.metaKey),
+      };
       return;
     }
 
@@ -657,6 +841,8 @@ export function initEditorCanvas(canvas) {
     const t = computeTransform();
     if (editorTool === 'draw' || editorTool === 'eraser') {
       canvas.style.cursor = editorTool === 'eraser' ? 'cell' : 'crosshair';
+    } else if (isMultiSelectMode()) {
+      canvas.style.cursor = 'crosshair';
     } else if (selectionMode === 'layer') {
       const activePoints = contours[activeContourIndex]?.points ?? [];
       const handle = hitTestLayerHandle(sx, sy, activePoints, t, HANDLE_HIT_RADIUS);
@@ -688,7 +874,11 @@ export function initEditorCanvas(canvas) {
       finishMarquee(computeTransform());
     }
     if (pendingPick && !dragging) {
-      selectPoint(pendingPick.pointIndex);
+      if (pendingPick.toggleOff) {
+        selectPoint(pendingPick.pointIndex, { additive: true });
+      } else if (!isMultiSelectMode()) {
+        selectPoint(pendingPick.pointIndex);
+      }
       pendingPick = null;
     }
     eraserStroke = false;
@@ -713,6 +903,18 @@ export function initEditorCanvas(canvas) {
 
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', endPointer);
+
+  canvas.addEventListener('dblclick', (e) => {
+    if (e.button !== 0) return;
+    syncSize();
+    const { sx, sy, world } = getPointerPos(e);
+    const t = computeTransform();
+    const { selectionMode, editorTool } = getState();
+    if (editorTool !== 'edit' || selectionMode !== 'layer') return;
+    if (!isEmptyCanvasHit(sx, sy, world, t)) return;
+    setSelectionMode('point');
+    draw();
+  });
 
   const ro = new ResizeObserver(() => syncSize());
   ro.observe(canvasWrap);

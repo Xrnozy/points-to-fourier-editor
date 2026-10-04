@@ -1,7 +1,8 @@
 import {
   getState,
   getOrderedGroups,
-  setActiveContourIndex,
+  isMultiSelectMode,
+  selectLayer,
   setSelectionMode,
   moveContourOrder,
   addMergedLayer,
@@ -9,7 +10,11 @@ import {
   splitActiveLayerToSeparate,
   joinActiveLayerToMerged,
   removeActiveContour,
+  setGroupHarmonics,
+  saveCheckpoint,
 } from './state.js';
+
+const MAX_HARMONICS = 32;
 
 function layerLabel(contour, indexInGroup, groupType, layerCount) {
   if (!contour.closed) return 'Drawing…';
@@ -22,11 +27,12 @@ export function initLayersPanel(container) {
     <div class="layers-panel">
       <div class="layers-head">
         <p class="control-section-title">Layers</p>
+        <p class="layers-hint">Shift+click to multi-select</p>
       </div>
       <div class="layers-actions">
         <button id="add-merged-btn" title="Add stitched layer to the selected Fourier group">+ Merge</button>
         <button id="add-separate-btn" title="New separate Fourier block">+ Separate</button>
-        <button id="remove-layer-btn" class="danger" title="Remove layer">Remove</button>
+        <button id="remove-layer-btn" class="danger" title="Remove layer (clears points if only one layer)">Remove</button>
       </div>
       <div class="layer-groups" id="layer-groups"></div>
       <div class="layer-group-actions btn-row">
@@ -42,6 +48,7 @@ export function initLayersPanel(container) {
   const removeBtn = container.querySelector('#remove-layer-btn');
   const splitBtn = container.querySelector('#split-layer-btn');
   const joinBtn = container.querySelector('#join-layer-btn');
+  let harmonicsDrag = false;
 
   addMergedBtn.addEventListener('click', () => addMergedLayer());
   addSeparateBtn.addEventListener('click', () => addSeparateLayer());
@@ -49,7 +56,50 @@ export function initLayersPanel(container) {
   splitBtn.addEventListener('click', () => splitActiveLayerToSeparate());
   joinBtn.addEventListener('click', () => joinActiveLayerToMerged());
 
+  function endHarmonicsDrag() {
+    if (!harmonicsDrag) return;
+    harmonicsDrag = false;
+    sync();
+  }
+
+  groupsEl.addEventListener(
+    'pointerdown',
+    (e) => {
+      const slider = e.target.closest('[data-group-harmonics]');
+      if (!slider) return;
+      e.stopPropagation();
+      saveCheckpoint();
+      harmonicsDrag = true;
+    },
+    true
+  );
+
+  groupsEl.addEventListener('input', (e) => {
+    const slider = e.target.closest('[data-group-harmonics]');
+    if (!slider) return;
+    e.stopPropagation();
+    const groupId = parseInt(slider.dataset.groupId, 10);
+    const value = parseInt(slider.value, 10);
+    setGroupHarmonics(groupId, value);
+    const valueEl = slider.parentElement.querySelector('.layer-group-harmonics-value');
+    if (valueEl) valueEl.textContent = value;
+  });
+
+  groupsEl.addEventListener(
+    'wheel',
+    (e) => {
+      if (e.target.closest('[data-group-harmonics]')) e.stopPropagation();
+    },
+    { passive: true }
+  );
+
+  document.addEventListener('pointerup', endHarmonicsDrag);
+  document.addEventListener('pointercancel', endHarmonicsDrag);
+
   groupsEl.addEventListener('click', (e) => {
+    if (e.target.closest('.layer-group-harmonics')) return;
+    if (isMultiSelectMode()) return;
+
     const item = e.target.closest('.layer-item');
     if (!item) return;
 
@@ -63,12 +113,14 @@ export function initLayersPanel(container) {
       if (index < contours.length - 1) moveContourOrder(index, index + 1);
       return;
     }
-    setActiveContourIndex(index);
+    selectLayer(index, { additive: e.shiftKey });
     setSelectionMode('layer');
   });
 
   function sync() {
-    const { contours, activeContourIndex, selectionMode } = getState();
+    if (harmonicsDrag) return;
+
+    const { contours, activeContourIndex, selectedLayerIndices } = getState();
     const orderedGroups = getOrderedGroups();
     removeBtn.disabled = contours.length <= 1;
 
@@ -85,6 +137,7 @@ export function initLayersPanel(container) {
     groupsEl.innerHTML = orderedGroups
       .map((group) => {
         fourierIndex += 1;
+        const harmonics = group.harmonics ?? 8;
         const groupContours = contours
           .map((contour, index) => ({ contour, index }))
           .filter(({ contour }) => contour.groupId === group.id);
@@ -101,10 +154,10 @@ export function initLayersPanel(container) {
         const items = groupContours
           .map(({ contour, index }, indexInGroup) => {
             const isActive = index === activeContourIndex;
-            const isLayerSel = isActive && selectionMode === 'layer';
+            const isSelected = selectedLayerIndices.includes(index);
             const label = layerLabel(contour, indexInGroup, group.type, layerCount);
             return `
-              <li class="layer-item${isActive ? ' active' : ''}${isLayerSel ? ' layer-selected' : ''}" data-index="${index}">
+              <li class="layer-item${isActive ? ' active' : ''}${isSelected ? ' layer-multi-selected' : ''}" data-index="${index}">
                 <button type="button" class="layer-select">
                   <span class="layer-swatch" style="--layer-color: var(--layer-${index % 4})"></span>
                   <span class="layer-name">${label}</span>
@@ -121,8 +174,22 @@ export function initLayersPanel(container) {
         return `
           <section class="layer-group${group.type === 'separate' ? ' layer-group-separate' : ''}">
             <div class="layer-group-head">
-              <span class="layer-group-title">${groupTitle}</span>
-              <span class="layer-group-hint">${groupHint}</span>
+              <div class="layer-group-title-row">
+                <span class="layer-group-title">${groupTitle}</span>
+                <span class="layer-group-hint">${groupHint}</span>
+              </div>
+              <div class="layer-group-harmonics" title="Harmonics for this Fourier block">
+                <span class="layer-group-harmonics-label">H</span>
+                <input
+                  type="range"
+                  data-group-harmonics
+                  data-group-id="${group.id}"
+                  min="1"
+                  max="${MAX_HARMONICS}"
+                  value="${harmonics}"
+                >
+                <span class="layer-group-harmonics-value">${harmonics}</span>
+              </div>
             </div>
             <ul class="layer-list">${items}</ul>
           </section>

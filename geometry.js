@@ -317,15 +317,31 @@ export function insertPoint(points, index, point) {
   return next;
 }
 
-export function arcLengthResample(points, sampleCount = RESAMPLE_COUNT) {
+export function closeOpenStrokeForFourier(points) {
+  if (points.length < 2) return points;
+  const bounds = getBounds(points);
+  const pad = Math.max(12, (bounds.maxY - bounds.minY) * 0.08);
+  const bridgeY = bounds.minY - pad;
+  const start = points[0];
+  const end = points[points.length - 1];
+  return [
+    ...points,
+    { x: end.x, y: bridgeY },
+    { x: start.x, y: bridgeY },
+    { x: start.x, y: start.y },
+  ];
+}
+
+export function arcLengthResample(points, sampleCount = RESAMPLE_COUNT, closed = true) {
   if (points.length < 2) return points.map((p) => ({ x: p.x, y: p.y }));
 
   const n = points.length;
+  const segCount = closed ? n : n - 1;
   const segLens = [];
   let total = 0;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < segCount; i++) {
     const a = points[i];
-    const b = points[(i + 1) % n];
+    const b = points[closed ? (i + 1) % n : i + 1];
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     segLens.push(len);
     total += len;
@@ -337,11 +353,11 @@ export function arcLengthResample(points, sampleCount = RESAMPLE_COUNT) {
   for (let s = 0; s < sampleCount; s++) {
     const target = (s / sampleCount) * total;
     let acc = 0;
-    for (let i = 0; i < n; i++) {
-      if (acc + segLens[i] >= target || i === n - 1) {
+    for (let i = 0; i < segCount; i++) {
+      if (acc + segLens[i] >= target || i === segCount - 1) {
         const segT = segLens[i] > 0 ? (target - acc) / segLens[i] : 0;
         const a = points[i];
-        const b = points[(i + 1) % n];
+        const b = points[closed ? (i + 1) % n : i + 1];
         result.push({
           x: a.x + (b.x - a.x) * segT,
           y: a.y + (b.y - a.y) * segT,

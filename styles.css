@@ -6,6 +6,14 @@
   padding: 0;
 }
 
+@font-face {
+  font-family: 'Playwrite US Trad';
+  src: url('fonts/PlaywriteUSTrad.ttf') format('truetype');
+  font-weight: 100 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --canvas: #13151a;
   --surface: #1a1d24;
@@ -180,7 +188,22 @@ canvas {
 }
 
 .layers-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
   margin-bottom: 0.45rem;
+}
+
+.layers-hint {
+  font-size: 0.62rem;
+  color: var(--ink-faint);
+}
+
+.harmonics-scope {
+  font-size: 0.62rem;
+  color: var(--ink-faint);
+  font-weight: 400;
 }
 
 .layers-actions {
@@ -218,10 +241,47 @@ canvas {
 
 .layer-group-head {
   display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.1rem 0.2rem 0.3rem;
+}
+
+.layer-group-title-row {
+  display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.35rem;
-  padding: 0.1rem 0.2rem 0.3rem;
+}
+
+.layer-group-harmonics {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.layer-group-harmonics-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+
+.layer-group-harmonics input[type='range'] {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  touch-action: none;
+}
+
+.layer-group-harmonics {
+  touch-action: none;
+}
+
+.layer-group-harmonics-value {
+  font-size: 0.65rem;
+  color: var(--ink-muted);
+  min-width: 1.2rem;
+  text-align: right;
 }
 
 .layer-group-title {
@@ -260,8 +320,10 @@ canvas {
   background: var(--canvas);
 }
 
-.layer-item.layer-selected {
+.layer-item.layer-selected,
+.layer-item.layer-multi-selected {
   border-color: rgba(212, 168, 140, 0.5);
+  background: rgba(212, 168, 140, 0.08);
 }
 
 .layer-select {
@@ -299,6 +361,126 @@ canvas {
   padding: 0;
   font-size: 0.65rem;
   line-height: 1;
+}
+
+#letter-panel {
+  padding: 0.65rem 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+#letter-panel .control-section-title {
+  margin-bottom: 0.35rem;
+}
+
+.letter-panel-hint {
+  font-size: 0.68rem;
+  color: var(--ink-muted);
+  margin-bottom: 0.45rem;
+  line-height: 1.35;
+}
+
+.letter-stroke-count-row {
+  display: grid;
+  grid-template-columns: auto 3.5rem 1fr;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+.letter-stroke-count-row input {
+  width: 100%;
+  min-height: 32px;
+  padding: 0.25rem 0.4rem;
+  background: var(--canvas);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.82rem;
+}
+
+.stroke-count-auto {
+  font-size: 0.62rem;
+  color: var(--ink-faint);
+}
+
+.letter-create-row {
+  display: grid;
+  grid-template-columns: 3.2rem 1fr;
+  gap: 0.45rem;
+}
+
+.letter-char-input {
+  width: 100%;
+  min-height: 36px;
+  text-align: center;
+  text-transform: lowercase;
+  font-family: var(--sans);
+  font-size: 1.1rem;
+  font-weight: 600;
+  background: var(--canvas);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+}
+
+.letter-char-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.letter-primary-btn {
+  background: rgba(107, 144, 128, 0.22);
+  border-color: rgba(107, 144, 128, 0.55);
+}
+
+.letter-workshop-ui {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px dashed var(--border);
+}
+
+.letter-workshop-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.letter-workshop-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.letter-stroke-label {
+  font-size: 0.65rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.letter-workshop-hint {
+  font-size: 0.67rem;
+  color: var(--ink-muted);
+  line-height: 1.35;
+  margin-bottom: 0.55rem;
+}
+
+.letter-guide-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  font-size: 0.7rem;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.letter-guide-toggle input {
+  accent-color: var(--accent);
 }
 
 #controls-panel .control-section {

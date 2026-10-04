@@ -1,13 +1,17 @@
 import {
   getState,
   setHarmonics,
+  getHarmonicsUI,
   setShapeName,
   setRotation,
   resetRotation,
   resetShape,
+  clearPointEditor,
   deleteSelectedPoints,
   setSelectionMode,
   setEditorTool,
+  toggleMultiSelectMode,
+  isMultiSelectMode,
   saveCheckpoint,
   undo,
   redo,
@@ -24,6 +28,9 @@ export function initControls(container) {
         <button id="point-mode-btn">Point edit</button>
       </div>
       <div class="btn-row">
+        <button id="multiselect-mode-btn" class="full-width">Select multiple</button>
+      </div>
+      <div class="btn-row">
         <button id="eraser-mode-btn">Eraser</button>
         <button id="draw-mode-btn">Draw new</button>
       </div>
@@ -37,7 +44,7 @@ export function initControls(container) {
         <input type="text" id="shape-name" value="shape" placeholder="duck, cat, heart...">
       </div>
       <div class="control-group">
-        <label for="harmonics-slider">Harmonics</label>
+        <label for="harmonics-slider">Harmonics <span class="harmonics-scope" id="harmonics-scope"></span></label>
         <div class="slider-row">
           <input type="range" id="harmonics-slider" min="1" max="32" value="8">
           <span class="slider-value" id="harmonics-value">8</span>
@@ -83,6 +90,9 @@ export function initControls(container) {
       </div>
       <div class="btn-row">
         <button id="reset-btn">Reset circle</button>
+        <button id="clear-btn" class="danger">Clear points</button>
+      </div>
+      <div class="btn-row">
         <button id="delete-btn" class="danger">Delete point</button>
       </div>
       <p class="tool-hint">Ctrl+Z · Ctrl+Y</p>
@@ -92,8 +102,10 @@ export function initControls(container) {
   const shapeNameInput = container.querySelector('#shape-name');
   const harmonicsSlider = container.querySelector('#harmonics-slider');
   const harmonicsValue = container.querySelector('#harmonics-value');
+  const harmonicsScope = container.querySelector('#harmonics-scope');
   const layerModeBtn = container.querySelector('#layer-mode-btn');
   const pointModeBtn = container.querySelector('#point-mode-btn');
+  const multiselectModeBtn = container.querySelector('#multiselect-mode-btn');
   const eraserModeBtn = container.querySelector('#eraser-mode-btn');
   const drawModeBtn = container.querySelector('#draw-mode-btn');
   const drawHint = container.querySelector('#draw-hint');
@@ -107,6 +119,7 @@ export function initControls(container) {
   const rotateZValue = container.querySelector('#rotate-z-value');
   const resetRotationBtn = container.querySelector('#reset-rotation-btn');
   const resetBtn = container.querySelector('#reset-btn');
+  const clearBtn = container.querySelector('#clear-btn');
   const deleteBtn = container.querySelector('#delete-btn');
 
   function readRotation() {
@@ -136,6 +149,7 @@ export function initControls(container) {
 
   shapeNameInput.addEventListener('input', () => setShapeName(shapeNameInput.value));
 
+  harmonicsSlider.addEventListener('pointerdown', () => saveCheckpoint());
   harmonicsSlider.addEventListener('input', () => {
     const n = parseInt(harmonicsSlider.value, 10);
     harmonicsValue.textContent = n;
@@ -150,6 +164,7 @@ export function initControls(container) {
     setEditorTool('edit');
     setSelectionMode('point');
   });
+  multiselectModeBtn.addEventListener('click', () => toggleMultiSelectMode());
   eraserModeBtn.addEventListener('click', () => {
     setEditorTool('eraser');
   });
@@ -161,6 +176,7 @@ export function initControls(container) {
     resetShape();
     shapeNameInput.value = getState().shapeName;
   });
+  clearBtn.addEventListener('click', () => clearPointEditor());
   deleteBtn.addEventListener('click', () => deleteSelectedPoints());
   undoBtn.addEventListener('click', () => undo());
   redoBtn.addEventListener('click', () => redo());
@@ -181,14 +197,27 @@ export function initControls(container) {
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
       deleteSelectedPoints();
+      return;
+    }
+    if (e.key === 'Shift' && !e.repeat && !mod && !e.altKey) {
+      toggleMultiSelectMode();
     }
   });
 
   function sync() {
-    const { harmonics, shapeName, rotation, selectionMode, editorTool, selectedIndices } = getState();
+    const { shapeName, rotation, selectionMode, editorTool, selectedIndices } = getState();
+    const harmonicsUI = getHarmonicsUI();
     shapeNameInput.value = shapeName;
-    harmonicsSlider.value = harmonics;
-    harmonicsValue.textContent = harmonics;
+    harmonicsSlider.value = harmonicsUI.value;
+    harmonicsValue.textContent = harmonicsUI.mixed ? `${harmonicsUI.value}*` : String(harmonicsUI.value);
+    if (harmonicsUI.layerCount > 1 || harmonicsUI.groupCount > 1) {
+      const parts = [];
+      if (harmonicsUI.layerCount > 1) parts.push(`${harmonicsUI.layerCount} layers`);
+      if (harmonicsUI.groupCount > 1) parts.push(`${harmonicsUI.groupCount} Fourier blocks`);
+      harmonicsScope.textContent = `(${parts.join(', ')})`;
+    } else {
+      harmonicsScope.textContent = '';
+    }
     rotateX.value = rotation.x;
     rotateY.value = rotation.y;
     rotateZ.value = rotation.z;
@@ -197,18 +226,21 @@ export function initControls(container) {
     rotateZValue.textContent = `${rotation.z}°`;
     layerModeBtn.classList.toggle('active', editorTool === 'edit' && selectionMode === 'layer');
     pointModeBtn.classList.toggle('active', editorTool === 'edit' && selectionMode === 'point');
+    multiselectModeBtn.classList.toggle('active', isMultiSelectMode());
     eraserModeBtn.classList.toggle('active', editorTool === 'eraser');
     drawModeBtn.classList.toggle('active', editorTool === 'draw');
     drawModeBtn.textContent = editorTool === 'draw' ? 'Stop draw' : 'Draw new';
     drawHint.textContent = editorTool === 'draw'
       ? 'Click to place points · Click first point to close'
       : editorTool === 'eraser'
-        ? 'Drag over points to erase · Needs at least 3 points left'
-        : selectionMode === 'layer'
-          ? 'Drag box to select points · Click/drag point to move · Scroll zoom · Middle-drag pan'
-          : selectedIndices.length > 1
-            ? `${selectedIndices.length} points selected · Drag box to add more · Shift+click toggles`
-            : 'Drag box to multi-select · Click edge to add · Shift+click toggles point';
+        ? 'Drag over points to erase · Letter strokes can be cleared fully'
+        : isMultiSelectMode()
+          ? 'Drag box to select · Ctrl+click adds · No layer/add'
+          : selectionMode === 'layer'
+            ? 'Click point to select · Double-click outside for point edit · Middle-drag pan'
+            : selectedIndices.length > 1
+              ? `${selectedIndices.length} points selected · Shift+click toggles point`
+              : 'Click edge to add · Drag box in Select multiple · Shift+click toggles';
     deleteBtn.textContent = selectedIndices.length > 1 ? 'Delete points' : 'Delete point';
     undoBtn.disabled = !canUndo();
     redoBtn.disabled = !canRedo();
