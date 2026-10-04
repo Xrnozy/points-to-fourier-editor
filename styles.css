@@ -110,9 +110,30 @@ body {
 }
 
 .panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.fit-view-btn {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.fit-view-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 .panel-head h2 {

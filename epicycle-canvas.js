@@ -1,6 +1,7 @@
-import { fitTransform, toCanvas, getBounds } from './geometry.js';
+import { toCanvas } from './geometry.js';
 import { sampleReconstructed } from './fourier.js';
 import { getAllBoundsPoints, getDisplayContours, getPreviewCoefficientSets } from './state.js';
+import { attachCanvasZoom, addFitViewButton } from './view-zoom.js';
 
 const RECON_COLORS = [
   { fill: 'rgba(107, 144, 128, 0.18)', stroke: '#8fbf9f' },
@@ -17,6 +18,20 @@ export function initEpicycleCanvas(canvas) {
 
   const canvasWrap = canvas.parentElement;
 
+  function getFitPoints() {
+    const coefficientSets = getPreviewCoefficientSets();
+    if (coefficientSets.length === 0) return getAllBoundsPoints();
+    const reconPaths = coefficientSets.map((coeffs) => sampleReconstructed(coeffs, 256));
+    return [...getAllBoundsPoints(), ...reconPaths.flat()];
+  }
+
+  const viewZoom = attachCanvasZoom(canvas, {
+    getFitPoints,
+    getViewSize: () => ({ w: viewW, h: viewH }),
+    onZoom: draw,
+  });
+  addFitViewButton(canvas, () => viewZoom.fitToContent());
+
   function syncSize() {
     const rect = canvasWrap.getBoundingClientRect();
     const w = Math.max(1, Math.round(rect.width));
@@ -29,6 +44,7 @@ export function initEpicycleCanvas(canvas) {
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    viewZoom.ensureFitted();
     draw();
   }
 
@@ -65,9 +81,8 @@ export function initEpicycleCanvas(canvas) {
 
     if (coefficientSets.length === 0 || viewW < 1 || viewH < 1) return;
 
+    transform = viewZoom.getTransform();
     const reconPaths = coefficientSets.map((coeffs) => sampleReconstructed(coeffs, 256));
-    const allPts = [...getAllBoundsPoints(), ...reconPaths.flat()];
-    transform = fitTransform(getBounds(allPts), viewW, viewH);
 
     for (const contour of contours) {
       if (contour.closed && contour.points.length >= 3) {

@@ -197,7 +197,7 @@ export function initControls(container) {
     drawHint.textContent = editorTool === 'draw'
       ? 'Click to place points · Click first point to close'
       : selectionMode === 'layer'
-        ? 'Click edge to add · Click point to drag · Handles scale/rotate · Shift = free scale'
+        ? 'Scroll zoom · Middle-drag pan · Fit resets view · Click edge/point to edit'
         : selectedIndices.length > 1
           ? `${selectedIndices.length} points selected · Edge adds · Point drags · Shift+click multi-select`
           : 'Click edge to add · Click point to drag · Shift+click to multi-select';

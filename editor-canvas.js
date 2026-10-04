@@ -14,12 +14,12 @@ import {
   computeScaleFromHandle,
   rotatePointsAround,
   pointInBounds,
-  fitTransform,
   toCanvas,
   fromCanvas,
   translatePoints,
   distSq,
 } from './geometry.js';
+import { attachCanvasZoom, addFitViewButton } from './view-zoom.js';
 import {
   getState,
   getActiveContour,
@@ -100,6 +100,7 @@ export function initEditorCanvas(canvas) {
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    viewZoom.ensureFitted();
     draw();
   }
 
@@ -113,8 +114,15 @@ export function initEditorCanvas(canvas) {
     return getAllBoundsPoints();
   }
 
+  const viewZoom = attachCanvasZoom(canvas, {
+    getFitPoints: getTransformPoints,
+    getViewSize: () => ({ w: viewW, h: viewH }),
+    onZoom: draw,
+  });
+  addFitViewButton(canvas, () => viewZoom.fitToContent());
+
   function computeTransform() {
-    return fitTransform(getBounds(getTransformPoints()), viewW, viewH);
+    return viewZoom.getTransform();
   }
 
   function getActiveTransform() {
@@ -385,6 +393,7 @@ export function initEditorCanvas(canvas) {
   }
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
     if (activePointerId !== null) return;
     syncSize();
     e.preventDefault();
